@@ -1,10 +1,13 @@
 package com.densoft.springsecuritydemo.security;
 
+import com.densoft.springsecuritydemo.auth.ApplicationUserService;
 import com.densoft.springsecuritydemo.model.Student;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
+import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
 import org.springframework.security.config.annotation.method.configuration.EnableGlobalMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -27,37 +30,25 @@ public class AppSecurityConfig extends WebSecurityConfigurerAdapter {
 
 
     private final PasswordEncoder passwordEncoder;
+    private final ApplicationUserService applicationUserService;
 
     @Autowired
-    public AppSecurityConfig(PasswordEncoder passwordEncoder) {
+    public AppSecurityConfig(PasswordEncoder passwordEncoder, ApplicationUserService applicationUserService) {
         this.passwordEncoder = passwordEncoder;
+        this.applicationUserService = applicationUserService;
     }
 
     @Override
+    protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+        auth.authenticationProvider(daoAuthenticationProvider());
+    }
+
     @Bean
-    protected UserDetailsService userDetailsService() {
-        UserDetails userDetails = User.builder()
-                .username("user")
-                .password(passwordEncoder.encode("password"))
-//                .roles(STUDENT.name()) //ROLE_STUDENT
-                .authorities(STUDENT.getGrantedAuthorities())
-                .build();
-
-        UserDetails adminDetails = User.builder()
-                .username("admin")
-                .password(passwordEncoder.encode("password"))
-//                .roles(ADMIN.name()) //ROLE_ADMIN
-                .authorities(ADMIN.getGrantedAuthorities())
-                .build();
-
-        UserDetails adminTraineeDetails = User.builder()
-                .username("adminTrainee")
-                .password(passwordEncoder.encode("password"))
-//                .roles(ADMINTRAINEE.name()) //ROLE_ADMINTRAINEE
-                .authorities(ADMINTRAINEE.getGrantedAuthorities())
-                .build();
-
-        return new InMemoryUserDetailsManager(userDetails, adminDetails, adminTraineeDetails);
+    public DaoAuthenticationProvider daoAuthenticationProvider() {
+        DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
+        provider.setPasswordEncoder(passwordEncoder);
+        provider.setUserDetailsService(applicationUserService);
+        return provider;
     }
 
     @Override
@@ -75,20 +66,20 @@ public class AppSecurityConfig extends WebSecurityConfigurerAdapter {
                 .authenticated()
 //                .and().httpBasic(); //basic  auth you cannot log out
                 .and().formLogin()
-                    .loginPage("/login").permitAll()
-                    .defaultSuccessUrl("/courses", true) //default redirect after login
-                    .passwordParameter("password") //custom password param name
-                    .usernameParameter("username") //custom username param name
+                .loginPage("/login").permitAll()
+                .defaultSuccessUrl("/courses", true) //default redirect after login
+                .passwordParameter("password") //custom password param name
+                .usernameParameter("username") //custom username param name
                 .and()
                 .rememberMe()
-                    .tokenValiditySeconds((int) TimeUnit.DAYS.toSeconds(21))
-                    .key("secured!00067#") //defaults to 2 weeks
-                    .rememberMeParameter("remember-me") //custom remember param name
+                .tokenValiditySeconds((int) TimeUnit.DAYS.toSeconds(21))
+                .key("secured!00067#") //defaults to 2 weeks
+                .rememberMeParameter("remember-me") //custom remember param name
                 .and().logout()
-                        .logoutUrl("/logout") //if csrf is enabled the HTTP method should be POST but if CSRF is disabled any method works
-                        .clearAuthentication(true)
-                        .invalidateHttpSession(true)
-                        .clearAuthentication(true).deleteCookies("JSESSIONID","remember-me")
-                        .logoutSuccessUrl("/login");
+                .logoutUrl("/logout") //if csrf is enabled the HTTP method should be POST but if CSRF is disabled any method works
+                .clearAuthentication(true)
+                .invalidateHttpSession(true)
+                .clearAuthentication(true).deleteCookies("JSESSIONID", "remember-me")
+                .logoutSuccessUrl("/login");
     }
 }
