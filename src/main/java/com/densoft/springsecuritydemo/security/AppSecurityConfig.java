@@ -1,24 +1,24 @@
 package com.densoft.springsecuritydemo.security;
 
 import com.densoft.springsecuritydemo.auth.ApplicationUserService;
-import com.densoft.springsecuritydemo.model.Student;
+import com.densoft.springsecuritydemo.jwt.JwtConfig;
+import com.densoft.springsecuritydemo.jwt.JwtTokenVerifier;
+import com.densoft.springsecuritydemo.jwt.JwtUsernameAndPasswordAuthenticationFilter;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
-import org.springframework.security.config.annotation.method.configuration.EnableGlobalMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
-import org.springframework.security.core.userdetails.User;
-import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.config.annotation.web.configuration.WebSecurityCustomizer;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 
-import java.util.concurrent.TimeUnit;
+import javax.crypto.SecretKey;
 
 import static com.densoft.springsecuritydemo.security.ApplicationUserPermission.COURSE_WRITE;
 import static com.densoft.springsecuritydemo.security.ApplicationUserRole.*;
@@ -29,13 +29,25 @@ import static com.densoft.springsecuritydemo.security.ApplicationUserRole.*;
 public class AppSecurityConfig extends WebSecurityConfigurerAdapter {
 
 
+    @Value("${spring.websecurity.debug:false}")
+    boolean webSecurityDebug;
     private final PasswordEncoder passwordEncoder;
     private final ApplicationUserService applicationUserService;
 
+    private final SecretKey secretKey;
+    private final JwtConfig jwtConfig;
+
     @Autowired
-    public AppSecurityConfig(PasswordEncoder passwordEncoder, ApplicationUserService applicationUserService) {
+    public AppSecurityConfig(PasswordEncoder passwordEncoder, ApplicationUserService applicationUserService, SecretKey secretKey, JwtConfig jwtConfig) {
         this.passwordEncoder = passwordEncoder;
         this.applicationUserService = applicationUserService;
+        this.secretKey = secretKey;
+        this.jwtConfig = jwtConfig;
+    }
+
+    @Bean
+    public WebSecurityCustomizer webSecurityCustomizer() {
+        return (web) -> web.debug(webSecurityDebug);
     }
 
     @Override
@@ -55,31 +67,19 @@ public class AppSecurityConfig extends WebSecurityConfigurerAdapter {
     protected void configure(HttpSecurity http) throws Exception {
         http
                 .csrf().disable()
+                .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+                .and()
+                .addFilter(new JwtUsernameAndPasswordAuthenticationFilter(authenticationManager(), jwtConfig, secretKey))
+                .addFilterAfter(new JwtTokenVerifier(secretKey, jwtConfig), JwtUsernameAndPasswordAuthenticationFilter.class)
                 .authorizeRequests()
                 .antMatchers("/", "index", "/css/*", "/js/*").permitAll()
+                .antMatchers(HttpMethod.POST, "/login").permitAll()
                 .antMatchers("/api/**").hasRole(ADMIN.name())
                 .antMatchers(HttpMethod.DELETE, "/management/api/**").hasAnyAuthority(COURSE_WRITE.getPermission())
                 .antMatchers(HttpMethod.POST, "/management/api/**").hasAnyAuthority(COURSE_WRITE.getPermission())
                 .antMatchers(HttpMethod.PUT, "/management/api/**").hasAnyAuthority(COURSE_WRITE.getPermission())
                 .antMatchers("/management/api/**").hasAnyRole(ADMIN.name(), ADMINTRAINEE.name())
                 .anyRequest()
-                .authenticated()
-//                .and().httpBasic(); //basic  auth you cannot log out
-                .and().formLogin()
-                .loginPage("/login").permitAll()
-                .defaultSuccessUrl("/courses", true) //default redirect after login
-                .passwordParameter("password") //custom password param name
-                .usernameParameter("username") //custom username param name
-                .and()
-                .rememberMe()
-                .tokenValiditySeconds((int) TimeUnit.DAYS.toSeconds(21))
-                .key("secured!00067#") //defaults to 2 weeks
-                .rememberMeParameter("remember-me") //custom remember param name
-                .and().logout()
-                .logoutUrl("/logout") //if csrf is enabled the HTTP method should be POST but if CSRF is disabled any method works
-                .clearAuthentication(true)
-                .invalidateHttpSession(true)
-                .clearAuthentication(true).deleteCookies("JSESSIONID", "remember-me")
-                .logoutSuccessUrl("/login");
+                .authenticated();
     }
 }
